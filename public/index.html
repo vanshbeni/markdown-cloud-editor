@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MarkCloud — Collaborative Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Berkeley+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --bg-base:    #0d0f14;
+      --bg-surface: #13161e;
+      --bg-raised:  #1b1f2a;
+      --bg-hover:   #222736;
+      --border:     #2a2f3e;
+      --accent:     #4f9cf9;
+      --accent-dim: rgba(79,156,249,0.15);
+      --accent-glow:rgba(79,156,249,0.25);
+      --text-primary:   #e8eaf0;
+      --text-secondary: #8891a8;
+      --text-muted:     #4a5168;
+      --green:  #3ecf8e;
+      --amber:  #f59e0b;
+      --red:    #f87171;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      overflow: hidden;
+    }
+
+    code, pre, textarea, .mono {
+      font-family: 'Berkeley Mono', 'Fira Code', monospace;
+    }
+
+    /* ── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Landing page ────────────────────────────────────────── */
+    #landing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 2rem;
+      background: var(--bg-base);
+      position: relative;
+      overflow: hidden;
+    }
+
+    #landing::before {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(79,156,249,0.07) 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .landing-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.3;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black, transparent);
+    }
+
+    .logo-mark {
+      font-family: 'Berkeley Mono', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .landing-title {
+      font-family: 'DM Sans', sans-serif;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-weight: 300;
+      line-height: 1.1;
+      text-align: center;
+      letter-spacing: -0.02em;
+    }
+
+    .landing-title span { color: var(--accent); }
+
+    .landing-sub {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      font-weight: 300;
+      text-align: center;
+      max-width: 380px;
+      line-height: 1.6;
+    }
+
+    #btn-start {
+      background: var(--accent);
+      color: #0d0f14;
+      border: none;
+      padding: 0.85rem 2.5rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      transition: opacity 0.15s, transform 0.15s;
+      position: relative;
+      z-index: 1;
+    }
+
+    #btn-start:hover  { opacity: 0.9; transform: translateY(-1px); }
+    #btn-start:active { transform: translateY(0); }
+    #btn-start:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .landing-features {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .feature-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.01em;
+    }
+
+    .feature-pill .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    /* ── Editor layout ───────────────────────────────────────── */
+    #app {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0 1rem;
+      height: 44px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .topbar-logo {
+      font-family: 'Berkeley Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+      letter-spacing: 0.15em;
+      white-space: nowrap;
+    }
+
+    #room-id-badge {
+      font-family: 'Berkeley Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    #room-id-badge:hover { color: var(--accent); border-color: var(--accent); }
+
+    .topbar-spacer { flex: 1; }
+
+    #save-status {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      transition: color 0.3s;
+    }
+
+    #save-status.saving { color: var(--amber); }
+    #save-status.saved  { color: var(--green); }
+    #save-status.error  { color: var(--red); }
+
+    #presence-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.65rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .presence-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ── Tab bar ─────────────────────────────────────────────── */
+    #tabbar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 0.5rem;
+      height: 38px;
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+
+    #tabbar::-webkit-scrollbar { height: 2px; }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0 0.85rem;
+      height: 100%;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+      position: relative;
+      font-family: 'Berkeley Mono', monospace;
+    }
+
+    .tab:hover { color: var(--text-primary); }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-close {
+      opacity: 0;
+      width: 14px; height: 14px;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      transition: opacity 0.15s, background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+
+    .tab:hover .tab-close   { opacity: 1; }
+    .tab-close:hover        { background: var(--bg-hover); color: var(--red); }
+
+    #btn-new-file {
+      margin-left: 0.25rem;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    #btn-new-file:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Toolbar ─────────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0 0.75rem;
+      height: 36px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .toolbar-btn {
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: 'Berkeley Mono', monospace;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+
+    .toolbar-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+    .toolbar-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 0.25rem;
+    }
+
+    #toolbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .view-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .view-btn {
+      padding: 0.2rem 0.6rem;
+      font-size: 0.72rem;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .view-btn.active { background: var(--bg-hover); color: var(--text-primary); }
+
+    /* ── Editor area ─────────────────────────────────────────── */
+    #editor-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #editor-pane, #preview-pane {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+    }
+
+    #editor-pane {
+      border-right: 1px solid var(--border);
+    }
+
+    #editor-pane.hidden, #preview-pane.hidden { display: none; }
+    #editor-pane.full, #preview-pane.full { flex: unset; width: 100%; }
+
+    #markdown-input {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 1.5rem 2rem;
+      font-family: 'Berkeley Mono', monospace;
+      font-size: 0.875rem;
+      line-height: 1.75;
+      caret-color: var(--accent);
+    }
+
+    /* ── Markdown preview styles ─────────────────────────────── */
+    #preview-pane {
+      background: var(--bg-base);
+      padding: 1.5rem 2.5rem;
+    }
+
+    #preview-content {
+      max-width: 720px;
+      margin: 0 auto;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+
+    #preview-content h1, #preview-content h2, #preview-content h3,
+    #preview-content h4, #preview-content h5, #preview-content h6 {
+      font-weight: 500;
+      line-height: 1.3;
+      margin: 1.75em 0 0.5em;
+      letter-spacing: -0.01em;
+    }
+
+    #preview-content h1 { font-size: 1.8em; }
+    #preview-content h2 { font-size: 1.4em; }
+    #preview-content h3 { font-size: 1.15em; }
+
+    #preview-content p { margin: 0.75em 0; }
+
+    #preview-content a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+    #preview-content code {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      padding: 0.1em 0.4em;
+      border-radius: 4px;
+      font-size: 0.85em;
+      color: #7dd3fc;
+    }
+
+    #preview-content pre {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    #preview-content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 0.85em;
+      color: var(--text-primary);
+    }
+
+    #preview-content blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 1rem;
+      color: var(--text-secondary);
+      margin: 1rem 0;
+    }
+
+    #preview-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.5rem 0;
+    }
+
+    #preview-content ul, #preview-content ol {
+      padding-left: 1.5rem;
+      margin: 0.75rem 0;
+    }
+
+    #preview-content li { margin: 0.25rem 0; }
+
+    #preview-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.875em;
+    }
+
+    #preview-content th, #preview-content td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+
+    #preview-content th {
+      background: var(--bg-raised);
+      font-weight: 500;
+    }
+
+    #preview-content img { max-width: 100%; border-radius: 6px; }
+
+    /* ── Modal ───────────────────────────────────────────────── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+
+    #modal-overlay.visible { display: flex; }
+
+    #modal {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    #modal h3 {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    #modal-input {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.85rem;
+      color: var(--text-primary);
+      font-family: 'Berkeley Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #modal-input:focus { border-color: var(--accent); }
+
+    .modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .btn-secondary {
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      font-size: 0.83rem;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .btn-secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+    .btn-primary {
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      font-size: 0.83rem;
+      background: var(--accent);
+      border: none;
+      color: #0d0f14;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+
+    .btn-primary:hover { opacity: 0.88; }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(4px);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 1.1rem;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      z-index: 200;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Loading overlay ─────────────────────────────────────── */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: var(--bg-base);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 50;
+      opacity: 1;
+      transition: opacity 0.3s;
+    }
+
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 28px; height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body>
+
+<!-- ── Loading overlay ──────────────────────────────────────── -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+</div>
+
+<!-- ── Landing page ─────────────────────────────────────────── -->
+<div id="landing">
+  <div class="landing-grid"></div>
+  <span class="logo-mark">MarkCloud</span>
+  <div>
+    <h1 class="landing-title">Write together,<br><span>in real-time.</span></h1>
+  </div>
+  <p class="landing-sub">
+    Create a conference, share the link, and collaborate on Markdown files instantly — no account needed.
+  </p>
+  <button id="btn-start">Start New Conference</button>
+  <div class="landing-features">
+    <div class="feature-pill"><span class="dot" style="background:var(--accent)"></span> Live sync via Supabase</div>
+    <div class="feature-pill"><span class="dot"></span> Multi-file tabs</div>
+    <div class="feature-pill"><span class="dot" style="background:var(--amber)"></span> No login required</div>
+  </div>
+</div>
+
+<!-- ── Editor app ────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <span class="topbar-logo">MARKCLOUD</span>
+    <div id="room-id-badge" title="Click to copy room URL">—</div>
+    <div class="topbar-spacer"></div>
+    <span id="save-status">—</span>
+    <div id="presence-badge">
+      <span class="presence-dot"></span>
+      <span id="presence-count">1 online</span>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div id="tabbar">
+    <!-- Tabs injected by JS -->
+    <button id="btn-new-file">＋ New File</button>
+  </div>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button class="toolbar-btn" data-action="bold"    title="Bold">**B**</button>
+    <button class="toolbar-btn" data-action="italic"  title="Italic">_I_</button>
+    <button class="toolbar-btn" data-action="code"    title="Inline code">`C`</button>
+    <button class="toolbar-btn" data-action="heading" title="Heading"># H</button>
+    <div class="toolbar-sep"></div>
+    <button class="toolbar-btn" data-action="ul"   title="Bullet list">• List</button>
+    <button class="toolbar-btn" data-action="link" title="Link">[url]</button>
+    <button class="toolbar-btn" data-action="hr"   title="Divider">—</button>
+    <div id="toolbar-right">
+      <div class="view-toggle">
+        <button class="view-btn active" data-view="split">Split</button>
+        <button class="view-btn"        data-view="editor">Editor</button>
+        <button class="view-btn"        data-view="preview">Preview</button>
+      </div>
+      <div class="toolbar-sep"></div>
+      <button class="toolbar-btn" id="btn-download" title="Download .md file">↓ Export</button>
+    </div>
+  </div>
+
+  <!-- Editor + Preview -->
+  <div id="editor-area">
+    <div id="editor-pane">
+      <textarea id="markdown-input" placeholder="Start writing Markdown here...&#10;&#10;# Heading&#10;**bold** _italic_ `code`&#10;&#10;— Changes sync in real-time across all participants."></textarea>
+    </div>
+    <div id="preview-pane">
+      <div id="preview-content"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── New file modal ─────────────────────────────────────────── -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>New file</h3>
+    <input id="modal-input" type="text" placeholder="filename.md" maxlength="60" />
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn-primary"   id="modal-confirm">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ──────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
