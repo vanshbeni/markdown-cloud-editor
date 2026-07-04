@@ -1,163 +1,159 @@
-# MarkCloud — Real-time Collaborative Markdown Editor
+# MarkCloud
 
-> **Stack**: Node.js + Express · Supabase (PostgreSQL + Realtime + Presence) · Vanilla JS · Tailwind CSS · Marked.js
+A real-time collaborative Markdown editor that enables multiple users to edit documents simultaneously with live synchronization, online presence tracking, and automatic cloud persistence.
 
----
+## Overview
 
-## Quick Start (Local)
+MarkCloud is a cloud-based Markdown editor built to demonstrate real-time collaboration using Supabase Realtime and a lightweight Node.js backend. The application separates live editing from persistent storage by broadcasting keystrokes over realtime channels while periodically saving document changes to PostgreSQL.
 
-```bash
-# 1. Clone / enter project
-cd markdown-cloud-editor
+## Features
 
-# 2. Install dependencies
-npm install
+* Real-time collaborative Markdown editing
+* Live user presence tracking
+* Automatic document persistence
+* Multi-file workspace support
+* Split-screen editor with Markdown preview
+* Keyboard shortcuts for common formatting operations
+* Responsive user interface
+* Cloud-backed storage with PostgreSQL
 
-# 3. Copy env file and fill in your Supabase credentials
-cp .env.example .env
+## Technology Stack
 
-# 4. Run the server
-npm run dev      # with nodemon (auto-reload)
-# or
-npm start        # plain node
+### Frontend
 
-# 5. Open http://localhost:3000
+* HTML5
+* Vanilla JavaScript
+* Tailwind CSS
+* Marked.js
+
+### Backend
+
+* Node.js
+* Express.js
+
+### Database & Realtime
+
+* Supabase
+* PostgreSQL
+* Supabase Realtime
+* Supabase Presence
+
+## Architecture
+
+```text
+Browser
+    │
+    ├── Realtime Broadcast
+    │
+Supabase Realtime
+    │
+    ├── Instant synchronization
+    │
+Express API
+    │
+    ├── Auto-save
+    │
+Supabase PostgreSQL
 ```
 
----
+The application uses two independent communication paths:
 
-## Step 1 — Set Up Supabase
+* **Realtime Broadcast** for low-latency collaborative editing.
+* **REST API** for debounced persistence to PostgreSQL.
 
-### 1.1 Create a project
-1. Go to [https://app.supabase.com](https://app.supabase.com)
-2. Click **New Project** → choose a name, password, and region
-3. Wait ~2 minutes for provisioning
+This architecture minimizes database writes while maintaining an instant collaborative editing experience.
 
-### 1.2 Run the schema
-1. In your Supabase dashboard, go to **SQL Editor → New Query**
-2. Paste the entire contents of `supabase-schema.sql`
-3. Click **Run**
-4. You should see: `rooms` and `files` tables created with RLS policies
+## Project Structure
 
-### 1.3 Enable Realtime
-1. Go to **Database → Replication** (left sidebar)
-2. Under **Tables** find `files` and toggle it **ON**
-3. This enables Supabase Realtime to broadcast row changes
+```text
+markdown-cloud-editor/
+│
+├── public/
+│   ├── index.html
+│   └── app.js
+├── server.js
+├── supabase-schema.sql
+├── package.json
+├── package-lock.json
+├── README.md
+└── .env.example
+```
 
-### 1.4 Get your API keys
-1. Go to **Settings → API**
-2. Copy:
-   - **Project URL** → `SUPABASE_URL`
-   - **anon / public** key → `SUPABASE_ANON_KEY`
-   - **service_role / secret** key → `SUPABASE_SERVICE_ROLE_KEY`
+## Getting Started
 
-### 1.5 Fill in `.env`
+### Clone the repository
+
+```bash
+git clone https://github.com/vanshbeni/markdown-cloud-editor.git
+cd markdown-cloud-editor
+```
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Configure environment variables
+
+Create a `.env` file.
+
 ```env
-SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_URL=YOUR_SUPABASE_URL
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 PORT=3000
 ```
 
----
+### Start the application
 
-## Step 2 — Test Locally
+Development
 
-1. Run `npm start`
-2. Open [http://localhost:3000](http://localhost:3000)
-3. Click **Start New Conference** — you'll be redirected to `/:roomId`
-4. Open the **same URL** in a second browser tab
-5. Type in one tab — you should see the text appear in the other tab instantly ✅
-6. Check the **"👥 2 online"** presence indicator updates ✅
-
----
-
-## Step 3 — Deploy to Render (Backend)
-
-1. Push your project to a GitHub repo
-2. Go to [https://render.com](https://render.com) → **New → Web Service**
-3. Connect your GitHub repo
-4. Set:
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Environment**: `Node`
-5. Add environment variables (from your `.env`):
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `PORT` = `3000`
-6. Click **Deploy**
-7. Your app will be live at `https://your-app.onrender.com`
-
-> **Note**: Render free tier spins down after inactivity. For always-on, upgrade to paid or use Railway.
-
----
-
-## Step 4 — Deploy to Railway (Alternative Backend)
-
-1. Go to [https://railway.app](https://railway.app) → **New Project → Deploy from GitHub**
-2. Select your repo
-3. Railway auto-detects Node.js — no build config needed
-4. Add the same environment variables under **Variables**
-5. Your app deploys automatically on every push
-
----
-
-## Directory Structure
-
-```
-markdown-cloud-editor/
-├── public/
-│   ├── index.html          # Full split-screen editor UI
-│   └── app.js              # All frontend logic
-├── server.js               # Express API + Supabase admin client
-├── supabase-schema.sql     # Run this in Supabase SQL Editor
-├── package.json
-├── .env.example            # Template for environment variables
-└── README.md
+```bash
+npm run dev
 ```
 
----
+Production
 
-## Architecture Overview
-
-```
-Browser (User A)                    Browser (User B)
-     │                                    │
-     │  types in textarea                 │
-     │                                    │
-     ├─→ Supabase Broadcast Channel ──────┤ instant (no DB write)
-     │   room:{roomId}:file:{fileId}      │
-     │                                    │
-     ├─→ debounce 1000ms                  │
-     │                                    │
-     └─→ PATCH /api/files/:id ──→ Supabase PostgreSQL (persists)
-                                          │
-                              on next page load: fetch from DB
+```bash
+npm start
 ```
 
-**Key separation:**
-- **Broadcast** = real-time typing sync (fires every keystroke, zero DB writes)
-- **PATCH /api/files/:id** = persistence (fires 1s after last keystroke)
-- **Presence** = online user count (Supabase Presence channel)
+Open:
 
----
+```
+http://localhost:3000
+```
+
+## Database Setup
+
+1. Create a Supabase project.
+2. Execute `supabase-schema.sql` in the SQL Editor.
+3. Enable Realtime for the `files` table.
+4. Configure the required environment variables.
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl/⌘ + S` | Force save immediately |
-| `Ctrl/⌘ + B` | Bold |
-| `Ctrl/⌘ + I` | Italic |
+| Shortcut       | Action        |
+| -------------- | ------------- |
+| Ctrl / Cmd + S | Save document |
+| Ctrl / Cmd + B | Bold          |
+| Ctrl / Cmd + I | Italic        |
 
----
+## Future Enhancements
 
-## Environment Variables
+* User authentication
+* Document version history
+* Role-based permissions
+* Syntax highlighting
+* Export to PDF and HTML
+* Offline editing support
+* AI-assisted writing features
 
-| Variable | Required | Description |
-|---|---|---|
-| `SUPABASE_URL` | ✅ | Your Supabase project URL |
-| `SUPABASE_ANON_KEY` | ✅ | Public anon key (safe to expose in frontend) |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Server-side admin key (never expose in frontend) |
-| `PORT` | optional | Server port (default: 3000) |
+## License
+
+This project is intended for educational and portfolio purposes.
+
+## Author
+
+**Vansh Beni**
